@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jobs Dashboard — Webhook Gateway Demo</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #1a1d24;
+      --border: #2a2f3a;
+      --text: #e6e9ef;
+      --muted: #9aa3b2;
+      --accent: #5b8cff;
+      --pending: #c9a227;
+      --running: #2f80ed;
+      --completed: #27ae60;
+      --failed: #eb5757;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+    header h1 { margin: 0 0 4px; font-size: 20px; }
+    header p { margin: 0; color: var(--muted); font-size: 13px; }
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 24px;
+      display: grid;
+      gap: 24px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px;
+    }
+    .panel h2 { margin: 0 0 12px; font-size: 15px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    input, button {
+      font: inherit;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+    }
+    input {
+      width: 100%;
+      padding: 9px 11px;
+      background: #11141a;
+      color: var(--text);
+      margin-bottom: 12px;
+    }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .row > div { flex: 1; min-width: 160px; }
+    button {
+      padding: 9px 16px;
+      background: var(--accent);
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.secondary { background: #2a2f3a; }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+    tr.job-row { cursor: pointer; }
+    tr.job-row:hover { background: #20242d; }
+    .badge {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: capitalize;
+    }
+    .badge.pending { background: rgba(201,162,39,0.18); color: var(--pending); }
+    .badge.running { background: rgba(47,128,237,0.18); color: var(--running); }
+    .badge.completed { background: rgba(39,174,96,0.18); color: var(--completed); }
+    .badge.failed { background: rgba(235,87,87,0.18); color: var(--failed); }
+    .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+    pre {
+      background: #11141a;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      overflow: auto;
+      font-size: 12px;
+      max-height: 360px;
+    }
+    .timeline { list-style: none; margin: 0 0 14px; padding: 0; font-size: 13px; }
+    .timeline li { padding: 4px 0; color: var(--muted); }
+    .timeline li b { color: var(--text); }
+    .status-msg { font-size: 12px; color: var(--muted); margin-top: 8px; min-height: 16px; }
+    .empty { color: var(--muted); font-size: 13px; padding: 12px 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Jobs Dashboard</h1>
+    <p>Submit a demo async job, watch the queue live, and inspect per-job status. Pure HTML/JS, no framework.</p>
+  </header>
+
+  <main>
+    <!-- API key + submit form -->
+    <section class="panel">
+      <h2>Submit a demo job</h2>
+      <div class="row">
+        <div>
+          <label for="apiKey">X-API-Key</label>
+          <input id="apiKey" type="password" placeholder="your gateway API key" autocomplete="off" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="topic">Topic</label>
+          <input id="topic" type="text" value="how to answer the phone after hours" />
+        </div>
+        <div style="flex:0 0 130px">
+          <label for="duration">Work seconds</label>
+          <input id="duration" type="number" min="0" max="10" value="3" />
+        </div>
+      </div>
+      <div class="row">
+        <button id="submitBtn">Submit job</button>
+        <button id="refreshBtn" class="secondary" type="button">Refresh now</button>
+      </div>
+      <div class="hint">The API key is kept in memory only and sent as the <span class="mono">X-API-Key</span> header. It is never stored.</div>
+      <div id="statusMsg" class="status-msg"></div>
+    </section>
+
+    <!-- Live job list -->
+    <section class="panel">
+      <h2>Jobs <span id="pollInfo" class="hint" style="margin-left:8px"></span></h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Job ID</th>
+            <th>Command</th>
+            <th>Status</th>
+            <th>Created (UTC)</th>
+          </tr>
+        </thead>
+        <tbody id="jobsBody">
+          <tr><td colspan="4" class="empty">No jobs yet — submit one above.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Per-job detail -->
+    <section class="panel" id="detailPanel" style="display:none">
+      <h2>Job detail — <span id="detailId" class="mono"></span></h2>
+      <ul class="timeline" id="detailTimeline"></ul>
+      <pre id="detailResult"></pre>
+    </section>
+  </main>
+
+  <script>
+    // ----- helpers -------------------------------------------------------
+    const $ = (id) => document.getElementById(id);
+    const apiKeyEl = $("apiKey");
+    let selectedJobId = null;
+    let pollTimer = null;
+
+    function getKey() {
+      return apiKeyEl.value.trim();
+    }
+
+    function authHeaders(extra) {
+      return Object.assign({ "X-API-Key": getKey() }, extra || {});
+    }
+
+    function setStatus(msg, isError) {
+      const el = $("statusMsg");
+      el.textContent = msg || "";
+      el.style.color = isError ? "var(--failed)" : "var(--muted)";
+    }
+
+    function badge(status) {
+      return `<span class="badge ${status}">${status}</span>`;
+    }
+
+    // ----- submit --------------------------------------------------------
+    async function submitJob() {
+      const key = getKey();
+      if (!key) { setStatus("Enter your X-API-Key first.", true); return; }
+
+      $("submitBtn").disabled = true;
+      setStatus("Submitting…");
+      try {
+        const res = await fetch("/demo/job", {
+          method: "POST",
+          headers: authHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({
+            topic: $("topic").value,
+            duration_seconds: Number($("duration").value) || 0,
+          }),
+        });
+        if (!res.ok) {
+          const txt = await res.text();
+          throw new Error(`HTTP ${res.status}: ${txt}`);
+        }
+        const data = await res.json();
+        setStatus(`Queued job ${data.job_id} (${data.status}).`);
+        selectedJobId = data.job_id;
+        await refresh();
+      } catch (err) {
+        setStatus(err.message, true);
+      } finally {
+        $("submitBtn").disabled = false;
+      }
+    }
+
+    // ----- list ----------------------------------------------------------
+    async function refresh() {
+      const key = getKey();
+      if (!key) return; // don't poll without a key
+
+      try {
+        const res = await fetch("/jobs?limit=25", { headers: authHeaders() });
+        if (!res.ok) {
+          if (res.status === 401 || res.status === 403) {
+            setStatus("API key rejected (check the key).", true);
+          }
+          return;
+        }
+        const payload = await res.json();
+        const jobs = (payload.data && payload.data.jobs) || [];
+        renderJobs(jobs);
+        $("pollInfo").textContent = `· ${jobs.length} shown · auto-refresh 2s`;
+        if (selectedJobId) loadDetail(selectedJobId);
+      } catch (err) {
+        // network blip — keep polling silently
+      }
+    }
+
+    function renderJobs(jobs) {
+      const body = $("jobsBody");
+      if (!jobs.length) {
+        body.innerHTML = '<tr><td colspan="4" class="empty">No jobs yet — submit one above.</td></tr>';
+        return;
+      }
+      body.innerHTML = jobs.map((j) => `
+        <tr class="job-row" data-id="${j.job_id}">
+          <td class="mono">${j.job_id}</td>
+          <td>${j.command}</td>
+          <td>${badge(j.status)}</td>
+          <td>${(j.created_at || "").replace("T", " ").slice(0, 19)}</td>
+        </tr>`).join("");
+
+      body.querySelectorAll("tr.job-row").forEach((row) => {
+        row.addEventListener("click", () => {
+          selectedJobId = row.getAttribute("data-id");
+          loadDetail(selectedJobId);
+        });
+      });
+    }
+
+    // ----- detail --------------------------------------------------------
+    async function loadDetail(jobId) {
+      const key = getKey();
+      if (!key) return;
+      try {
+        const res = await fetch(`/jobs/${jobId}`, { headers: authHeaders() });
+        if (!res.ok) return;
+        const payload = await res.json();
+        const job = payload.data || {};
+        renderDetail(job);
+      } catch (err) { /* ignore transient */ }
+    }
+
+    function renderDetail(job) {
+      $("detailPanel").style.display = "block";
+      $("detailId").textContent = job.job_id || "";
+      const fmt = (t) => t ? t.replace("T", " ").slice(0, 19) + " UTC" : "—";
+      $("detailTimeline").innerHTML = `
+        <li>Status: <b>${badge(job.status)}</b></li>
+        <li>Command: <b>${job.command || "—"}</b></li>
+        <li>Created: <b>${fmt(job.created_at)}</b></li>
+        <li>Started: <b>${fmt(job.started_at)}</b></li>
+        <li>Completed: <b>${fmt(job.completed_at)}</b></li>
+      `;
+      const out = job.error
+        ? `Error:\n${job.error}`
+        : JSON.stringify(job.result || { info: "Result will appear when the job completes." }, null, 2);
+      $("detailResult").textContent = out;
+    }
+
+    // ----- wiring --------------------------------------------------------
+    $("submitBtn").addEventListener("click", submitJob);
+    $("refreshBtn").addEventListener("click", refresh);
+
+    function startPolling() {
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(refresh, 2000);
+    }
+    startPolling();
+  </script>
+</body>
+</html>

@@ -20,6 +20,47 @@ uvicorn gateway.main:app --reload --port 8088
 python -m gateway.main
 ```
 
+## Quick demo (no private routers)
+
+The repo ships a self-contained demo path so you can exercise the async job
+flow without any client config, secrets, or private routers. It uses a mock
+"summarize a topic" job that sleeps a few seconds and returns clearly-labeled
+fake data (a hypothetical SaaS called **PingDesk**).
+
+```bash
+# 1. Start the server in debug mode with any API key
+export CMO_GATEWAY_API_KEY=demo-key-123
+export CMO_GATEWAY_DEBUG=true
+uvicorn gateway.main:app --reload --port 8088
+
+# 2. Submit a demo job (returns a job_id immediately)
+curl -X POST http://localhost:8088/demo/job \
+  -H "X-API-Key: demo-key-123" \
+  -H "Content-Type: application/json" \
+  -d '{"topic": "how to answer the phone after hours", "duration_seconds": 3}'
+# → {"job_id": "abc12345", "status": "pending", "message": "Demo summarize-topic job queued"}
+
+# 3. Watch it move pending → running → completed
+curl http://localhost:8088/jobs -H "X-API-Key: demo-key-123"
+curl http://localhost:8088/jobs/abc12345 -H "X-API-Key: demo-key-123"
+```
+
+Then open the **jobs dashboard** in a browser:
+
+```
+http://localhost:8088/static/dashboard.html
+```
+
+Paste your API key into the dashboard, submit a job, and watch the live list
+(auto-refreshes every 2s). Click any row to see its status timeline and the
+fake structured summary. Everything is local — no network calls, no secrets.
+
+| Demo file | Purpose |
+|-----------|---------|
+| `demo/sample_job.py` | Mock async job (`summarize_topic`) — sleeps, returns fake summary |
+| `routers/demo.py` | `POST /demo/job` — submits the sample job into the shared queue |
+| `static/dashboard.html` | Single-page jobs dashboard (pure HTML/JS) |
+
 ## Configuration
 
 Add to `scripts/.env`:
@@ -89,6 +130,13 @@ CMO_GATEWAY_DEBUG=false
 |----------|--------|------|-------------|
 | `/webhooks/tasks/extract` | POST | Async | Extract tasks from text |
 | `/webhooks/tasks/deduplicate` | POST | Sync | Deduplicate tasks |
+
+### Demo
+
+| Endpoint | Method | Mode | Description |
+|----------|--------|------|-------------|
+| `/demo/job` | POST | Async | Submit the sample "summarize a topic" job |
+| `/static/dashboard.html` | GET | — | Jobs dashboard (HTML/JS, served if `static/` present) |
 
 ### Jobs
 

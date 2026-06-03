@@ -23,6 +23,7 @@ from gateway.models import WebhookResponse
 # Import routers
 from gateway.routers import analytics, tiktok, cold_email, tasks, clients, jobs
 from gateway.routers import whatsapp, agent, creative, stripe, quality, mikai
+from gateway.routers import demo
 
 
 @asynccontextmanager
@@ -190,6 +191,32 @@ app.include_router(
     tags=["MiKai"],
     # Auth handled per-route inside the router (audit is public, leads/run need key)
 )
+
+# Demo routes — public, self-contained example of the async job flow.
+# API-key protected like the other webhooks.
+app.include_router(
+    demo.router,
+    prefix="/demo",
+    tags=["Demo"],
+    dependencies=[Depends(verify_api_key)]
+)
+
+
+# ============================================================================
+# Static Files (optional — guarded so a missing dep/dir can't break startup)
+# ============================================================================
+
+# Serve the demo dashboard at /static/dashboard.html. Wrapped in try/except so
+# the gateway still boots if StaticFiles is unavailable or the directory is
+# absent in a given deployment.
+try:
+    from fastapi.staticfiles import StaticFiles
+
+    _static_dir = Path(__file__).parent / "static"
+    if _static_dir.is_dir():
+        app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+except Exception as _static_err:  # pragma: no cover - best-effort mount
+    print(f"Static files not mounted: {_static_err}")
 
 
 # ============================================================================
