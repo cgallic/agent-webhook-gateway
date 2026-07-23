@@ -297,3 +297,8 @@ gateway/
     ├── cold_email_adapter.py  # Wrap scripts/cold_email/
     └── tasks_adapter.py       # Wrap task scripts
 ```
+
+
+---
+
+*Built and maintained by [Connor Gallic](https://pr.linkedin.com/in/cgallic) — connect on LinkedIn.*
